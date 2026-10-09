@@ -256,6 +256,13 @@ details summary::-webkit-details-marker{display:none}
         <button class="btn" id="importer">Importer (remplace tout)</button>
       </div>
     </div>
+    <div class="sec" id="recupSec" hidden>
+      <div class="sec-h"><h2>Ancienne version</h2></div>
+      <div class="card pad stack">
+        <p class="note" id="recupNote"></p>
+        <button class="btn" id="recup">Récupérer les données de l'ancienne version</button>
+      </div>
+    </div>
     <div class="sec"><button class="btn danger" id="reset">Tout effacer</button></div>
   </section>
 </main>
@@ -445,10 +452,20 @@ function courbe(k){
 // ============================================================
 function vide(){ return {v:3, nom:'Compte joint', recs:[], ops:{}, exc:{}, solde:null}; }
 function enregistrer(){ try { localStorage.setItem(CLE, JSON.stringify(S)); } catch(e) {} }
+const estVide = s => !s.recs.length && !Object.keys(s.ops).length;
+function ancienne(){
+  try { const raw = localStorage.getItem(ANCIENNE); if (raw){ const o = JSON.parse(raw); if (o && o.months) return o; } } catch(e) {}
+  return null;
+}
 function charger(){
-  try { const raw = localStorage.getItem(CLE); if (raw){ const s = JSON.parse(raw); if (s && s.v === 3) return valide(s); } } catch(e) {}
-  try { const raw = localStorage.getItem(ANCIENNE); if (raw){ const o = JSON.parse(raw); if (o && o.months){ const s = reprise(o); s.repris = new Date().toISOString(); return s; } } } catch(e) {}
-  return vide();
+  let s = null;
+  try { const raw = localStorage.getItem(CLE); if (raw){ const x = JSON.parse(raw); if (x && x.v === 3) s = valide(x); } } catch(e) {}
+  // nouvelle version vide alors que l'ancienne a des données : on reprend
+  if (!s || estVide(s)){
+    const o = ancienne();
+    if (o){ try { const r = reprise(o); r.repris = new Date().toISOString(); if (s && s.solde) r.solde = s.solde; return r; } catch(e) { console.error('reprise', e); } }
+  }
+  return s || vide();
 }
 function valide(s){
   const v = vide();
@@ -671,6 +688,9 @@ function renduReglages(){
   $('soldeMt').value = S.solde ? S.solde.montant : '';
   $('soldeDt').value = S.solde ? S.solde.date : auj();
   $('nomCompte').value = S.nom || '';
+  const o = ancienne();
+  $('recupSec').hidden = !o;
+  if (o) $('recupNote').textContent = `Les données de l'ancienne version sont toujours dans ce téléphone (${Object.keys(o.months).length} mois, ${(o.recTemplates||[]).length} charges récurrentes). Tu peux les reprendre à tout moment.`;
 }
 
 function montrer(v){
@@ -945,6 +965,13 @@ $('importer').onclick = () => {
   if (!s) return toast('Code illisible');
   demander('Importer ce code ?', 'Toutes les données de ce téléphone seront remplacées.', [
     {txt:'Importer', cls:'primary', ok:'Import réussi', fn:() => { S = s; $('importZone').value = ''; }}
+  ]);
+};
+$('recup').onclick = () => {
+  const o = ancienne(); if (!o) return toast('Aucune ancienne donnée ici');
+  let r; try { r = reprise(o); } catch(e) { return toast('Reprise impossible : ' + e.message); }
+  demander('Reprendre l’ancienne version ?', 'Les données actuelles de la nouvelle version seront remplacées.', [
+    {txt:'Reprendre', cls:'primary', ok:'Données reprises', fn:() => { if (S.solde) r.solde = S.solde; S = r; mois = moisCourant(); }}
   ]);
 };
 $('reset').onclick = () => demander('Tout effacer ?', 'Échéances, opérations et solde seront supprimés de ce téléphone.', [
